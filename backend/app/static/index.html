@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SuccessFactors Workbook Modular UI</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #16202a;
+        --muted: #617080;
+        --line: #dce4ec;
+        --accent: #0f6b5f;
+        --accent-dark: #0a4b43;
+        --panel: #ffffff;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: Georgia, "Times New Roman", serif;
+        background:
+          radial-gradient(circle at 18% 10%, #c9efe5 0, transparent 28%),
+          linear-gradient(135deg, #fff8e6 0%, #f0f7f5 48%, #e8f1ec 100%);
+      }
+      main { max-width: 980px; margin: 0 auto; padding: 48px 20px; }
+      .hero { margin-bottom: 28px; }
+      h1 { max-width: 760px; margin: 0 0 12px; font-size: clamp(2.2rem, 6vw, 4.8rem); line-height: .92; letter-spacing: -0.06em; }
+      p { max-width: 720px; color: var(--muted); font-size: 1.1rem; }
+      form, .card {
+        display: grid; gap: 18px; padding: 28px; border: 1px solid var(--line); border-radius: 28px;
+        background: color-mix(in srgb, var(--panel), transparent 8%); box-shadow: 0 24px 70px rgba(22, 32, 42, .12);
+      }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      label { display: grid; gap: 7px; font-weight: 700; }
+      span { color: var(--muted); font-size: .92rem; font-weight: 400; }
+      input, select, textarea, button {
+        width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px;
+        color: var(--ink); background: #fffef8; font: 1rem ui-monospace, "SFMono-Regular", Menlo, monospace;
+      }
+      textarea { min-height: 90px; resize: vertical; }
+      .full { grid-column: 1 / -1; }
+      .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+      .actions button { width: auto; cursor: pointer; font-weight: 800; }
+      .primary { border: 0; color: white; background: linear-gradient(135deg, var(--accent), var(--accent-dark)); }
+      .secondary { color: var(--accent-dark); background: #dff3ed; }
+      .flash { margin-bottom: 16px; padding: 12px 14px; border-radius: 14px; background: #fff1d6; color: #7a4300; display:none; }
+      .info { background: #eaf4ec; color: #16543f; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 10px; border-bottom: 1px solid #dce4ec; text-align: left; vertical-align: top; }
+      th { color: white; background: #1f4e78; }
+      .error { color: #9f2b18; white-space: pre-wrap; }
+      .hidden { display: none; }
+      @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <h1>SuccessFactors Workbook Modular Services.</h1>
+        <p>This modular version keeps the same UI feel, but the form calls backend API services for Employee Central, Foundation Objects, Onboarding, and Discovery.</p>
+      </section>
+      <div id="flash" class="flash"></div>
+      <form id="workbook-form">
+        <div class="grid">
+          <label>Module
+            <select name="module" id="module" required>
+              <option value="employee_central">Employee Central</option>
+              <option value="foundation_objects">Foundation Objects</option>
+              <option value="onboarding">Onboarding</option>
+            </select>
+          </label>
+          <label>Company ID
+            <input name="company_id" placeholder="Company ID">
+          </label>
+          <label class="full">API base URL
+            <span>Example: https://api44preview.sapsf.com/odata/v2</span>
+            <input name="api_base_url" placeholder="https://.../odata/v2" required>
+          </label>
+          <label>Username
+            <input name="username" autocomplete="username" required>
+          </label>
+          <label>Password
+            <input name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <label class="full">Override entities
+            <span>Only used for Employee Central generic mode.</span>
+            <textarea name="entities" placeholder="EmpJob, PerPerson, FOCompany"></textarea>
+          </label>
+          <label>Rows per entity
+            <span>Used for Foundation and Onboarding template population.</span>
+            <input name="top" value="200">
+          </label>
+          <label>Discovery terms
+            <span>Used only by the discovery action.</span>
+            <input name="discovery_terms" value="ec,foundation,onb,onboarding,picklist,rule">
+          </label>
+        </div>
+        <div class="actions">
+          <button class="primary" type="submit">Generate workbook</button>
+          <button class="secondary" type="button" id="discover-btn">Discover entities</button>
+        </div>
+      </form>
+
+      <section id="result" class="card hidden" style="margin-top:24px;">
+        <h2 id="result-title" style="margin:0;font-size:2rem;color:#16324F;">Workbook generated.</h2>
+        <p id="result-subtitle"></p>
+        <p><a id="download-link" href="#" style="display:inline-block;border-radius:999px;padding:13px 20px;color:white;background:#0f6b5f;text-decoration:none;font-weight:800;">Download artifact</a></p>
+        <table>
+          <thead><tr><th>Sheet</th><th>Entity</th><th>Status</th><th>Rows</th><th>Error</th></tr></thead>
+          <tbody id="result-body"></tbody>
+        </table>
+      </section>
+    </main>
+    <script>
+      const form = document.getElementById("workbook-form");
+      const discoverBtn = document.getElementById("discover-btn");
+      const flash = document.getElementById("flash");
+      const result = document.getElementById("result");
+      const resultBody = document.getElementById("result-body");
+      const resultSubtitle = document.getElementById("result-subtitle");
+      const resultTitle = document.getElementById("result-title");
+      const downloadLink = document.getElementById("download-link");
+      const actionButtons = document.querySelectorAll(".actions button");
+
+      function showMessage(msg, cls="flash") {
+        flash.textContent = msg;
+        flash.className = cls;
+        flash.style.display = "block";
+      }
+
+      function showError(msg) {
+        showMessage(msg, "flash");
+      }
+
+      function showInfo(msg) {
+        showMessage(msg, "flash info");
+      }
+
+      function clearError() {
+        flash.style.display = "none";
+        flash.textContent = "";
+        flash.className = "flash";
+      }
+
+      function setBusy(isBusy, text="") {
+        for (const btn of actionButtons) btn.disabled = isBusy;
+        if (isBusy) showInfo(text || "Processing request...");
+      }
+
+      function renderResult(data) {
+        clearError();
+        result.classList.remove("hidden");
+        resultTitle.textContent = data.mode === "discovery" ? "Discovery workbook generated." : "Workbook generated.";
+        resultSubtitle.textContent = `Module: ${data.module} | Mode: ${data.mode}`;
+        downloadLink.href = data.download_url;
+        downloadLink.textContent = `Download ${data.artifact}`;
+        resultBody.innerHTML = "";
+        for (const row of data.summary) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${row.sheet || ""}</td><td>${row.entity || ""}</td><td>${row.status || ""}</td><td>${row.rows ?? ""}</td><td class="error">${row.error || ""}</td>`;
+          resultBody.appendChild(tr);
+        }
+      }
+
+      function basePayload() {
+        const fd = new FormData(form);
+        return {
+          module: fd.get("module"),
+          api_base_url: fd.get("api_base_url"),
+          company_id: fd.get("company_id") || "",
+          username: fd.get("username"),
+          password: fd.get("password"),
+          top: Number(fd.get("top") || "200"),
+          entities: String(fd.get("entities") || "").split(",").map(v => v.trim()).filter(Boolean),
+        };
+      }
+
+      async function callApi(url, payload) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          let msg = `${res.status} ${res.statusText}`;
+          try {
+            const data = await res.json();
+            msg = data.detail || msg;
+          } catch {}
+          throw new Error(msg);
+        }
+        return res.json();
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        clearError();
+        result.classList.add("hidden");
+        setBusy(true, "Generating workbook... Template-based modules can take a little longer.");
+        const payload = basePayload();
+        let url = "/api/workbooks/employee-central";
+        if (payload.module === "foundation_objects") url = "/api/workbooks/foundation";
+        if (payload.module === "onboarding") url = "/api/workbooks/onboarding";
+        try {
+          const data = await callApi(url, payload);
+          renderResult(data);
+        } catch (err) {
+          showError(`Unexpected error: ${err.message}`);
+        } finally {
+          setBusy(false);
+        }
+      });
+
+      discoverBtn.addEventListener("click", async () => {
+        clearError();
+        result.classList.add("hidden");
+        setBusy(true, "Discovering entities from tenant metadata...");
+        const payload = basePayload();
+        payload.search_terms = document.querySelector("input[name='discovery_terms']").value.split(",").map(v => v.trim()).filter(Boolean);
+        try {
+          const data = await callApi("/api/discovery/entities", payload);
+          renderResult(data);
+        } catch (err) {
+          showError(`Unexpected error: ${err.message}`);
+        } finally {
+          setBusy(false);
+        }
+      });
+    </script>
+  </body>
+</html>
